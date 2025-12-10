@@ -3,7 +3,7 @@
 
 ### 👥 Equipo
 * **Estudiante 1:** [Álvaro]
-
+* **Estudiante 1:** [Hugo]
 
 ### 📖 Descripción
 Este prototipo implementa el control **A.8.12 de la norma ISO/IEC 27001:2022**. 

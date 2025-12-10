@@ -4,32 +4,32 @@ from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 import logging
 
-# --- Configuración Inicial ---
-st.set_page_config(page_title="DLP AI Firewall - Español", layout="wide")
-logging.basicConfig(level=logging.INFO)
+# --- Configuración de la Página ---
+st.set_page_config(page_title="SafePrompt Gateway", page_icon="🛡️", layout="wide")
+
+# --- Estilos CSS ---
+st.markdown("""
+    <style>
+    .stTextArea textarea {
+        font-family: 'Courier New', Courier, monospace;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- 1. CONFIGURACIÓN DEL MOTOR EN ESPAÑOL ---
-# Aquí es donde arreglamos el error. Forzamos a Presidio a usar el modelo 'es_core_news_lg'.
 def configurar_motor_espanol():
-    # Definimos que para el idioma "es" usaremos el modelo de spacy en español
     configuration = {
         "nlp_engine_name": "spacy",
         "models": [{"lang_code": "es", "model_name": "es_core_news_lg"}],
     }
-    
-    # Creamos el proveedor con esa configuración
     provider = NlpEngineProvider(nlp_configuration=configuration)
     nlp_engine = provider.create_engine()
-    
-    # Iniciamos el Analyzer con soporte SOLO para español
     analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["es"])
     return analyzer
 
-# --- 2. DETECTOR DE DNI (Tu lógica personalizada) ---
+# --- 2. DETECTOR DE DNI ---
 def crear_detector_dni():
-    # Regex: 8 dígitos seguidos de una letra mayúscula
     dni_pattern = Pattern(name="dni_pattern", regex=r"\b\d{8}[A-Z]\b", score=0.95)
-    # Importante: Le decimos que este reconocedor funciona para "es"
     dni_recognizer = PatternRecognizer(
         supported_entity="ES_DNI", 
         patterns=[dni_pattern],
@@ -37,71 +37,78 @@ def crear_detector_dni():
     )
     return dni_recognizer
 
-# --- Carga de Motores (Caché) ---
+# --- Carga de Motores ---
 @st.cache_resource
 def load_engines():
-    # 1. Cargamos el motor base en español
-    analyzer = configurar_motor_espanol()
-    
-    # 2. Le inyectamos tu detector de DNI
-    dni_recognizer = crear_detector_dni()
-    analyzer.registry.add_recognizer(dni_recognizer)
-    
-    # 3. Cargamos el anonimizador
-    anonymizer = AnonymizerEngine()
-    
-    return analyzer, anonymizer
+    try:
+        analyzer = configurar_motor_espanol()
+        dni_recognizer = crear_detector_dni()
+        analyzer.registry.add_recognizer(dni_recognizer)
+        anonymizer = AnonymizerEngine()
+        return analyzer, anonymizer, True
+    except Exception as e:
+        return None, None, False
 
-try:
-    analyzer, anonymizer = load_engines()
-    SETUP_OK = True
-except Exception as e:
-    st.error(f"❌ Error crítico cargando el motor: {e}")
-    st.info("💡 Pista: ¿Has ejecutado 'python -m spacy download es_core_news_lg' en la terminal?")
-    SETUP_OK = False
+analyzer, anonymizer, SETUP_OK = load_engines()
 
-# --- Interfaz Gráfica ---
-st.title("🛡️ SafePrompt Gateway (Solo Español)")
-st.markdown("### Sistema DLP optimizado para normativa española (ISO 27001)")
+# --- INTERFAZ GRÁFICA ---
 
-col1, col2 = st.columns(2)
+col_logo, col_title = st.columns([1, 15])
+with col_logo:
+    st.markdown("# 🛡️") 
+with col_title:
+    st.title("SafePrompt Gateway (Prototipo ISO 27001)")
+    st.markdown("Esta herramienta actúa como un **proxy de seguridad** (DLP) para evitar fugas de información al usar IAs como ChatGPT. Cumple con el control **A.8.12 de ISO 27001:2022**.")
 
-with col1:
-    st.subheader("Entrada de Datos")
-    # Texto de ejemplo predefinido para la demo
-    texto_demo = "El cliente con DNI 98765432K ha solicitado un aumento. Su teléfono es 612345678 y su correo es juan.perez@example.com."
-    
-    user_input = st.text_area("Consulta:", height=200, value=texto_demo)
-    
-    analyze_button = st.button("Analizar Tráfico")
+st.write("") 
 
-if SETUP_OK and analyze_button and user_input:
-    # 1. Análisis (FORZADO A ESPAÑOL 'es')
-    # Al haber configurado el NlpEngineProvider arriba, ahora 'es' sí funciona.
-    results = analyzer.analyze(text=user_input, language='es')
+if not SETUP_OK:
+    st.error("❌ Error crítico: No se pudo cargar el motor. Ejecuta: `python -m spacy download es_core_news_lg`")
+else:
+    # --- ÁREA PRINCIPAL ---
+    col1, col2 = st.columns(2)
+    texto_salida = ""
+    entidades_detectadas = []
     
-    # 2. Anonimización
-    anonymized_result = anonymizer.anonymize(text=user_input, analyzer_results=results)
-    
-    # 3. Lógica de Alerta
-    detected_types = [entity.entity_type for entity in results]
-    
-    if detected_types:
-        st.error(f"🚫 BLOQUEADO. Entidades detectadas: {list(set(detected_types))}")
-        
-        # Mensajes específicos según lo encontrado
-        if "ES_DNI" in detected_types:
-            st.toast("Documento Nacional de Identidad detectado", icon="🚨")
-        if "PHONE_NUMBER" in detected_types:
-             st.toast("Número de teléfono detectado", icon="📞")
-            
-    else:
-        st.success("✅ Tráfico Seguro. No se detectaron datos sensibles.")
+    with col1:
+        st.subheader("1. Área de Empleado (Riesgo)")
+        texto_demo = """Genera un informe que incluya los siguientes datos sensibles:
+Nombre: Juan Pérez
+Dirección: Calle Ejemplo 123, Ciudad de México, CP 01010
+Número de teléfono: +52 55 1234 5678
+Correo electrónico: juan.perez@email.com
+Número de identificación: 12345678Z
+El informe debe analizar las implicaciones de seguridad."""
+
+        texto_entrada = st.text_area("Escribe tu consulta para la IA aquí:", height=350, value=texto_demo)
+        analizar = st.button("Analizar y Enviar de forma Segura", type="primary")
+
+    # Lógica de Análisis
+    if analizar and texto_entrada:
+        results = analyzer.analyze(text=texto_entrada, language='es')
+        anonymized_result = anonymizer.anonymize(text=texto_entrada, analyzer_results=results)
+        texto_salida = anonymized_result.text
+        entidades_detectadas = [entity.entity_type for entity in results]
 
     with col2:
-        st.subheader("Salida Sanitizada")
-        st.code(anonymized_result.text, language="text")
+        st.subheader("2. Salida Segura (Lo que viaja a Internet)")
+        st.text_area("Texto Sanitizado:", value=texto_salida if analizar else "", height=350, disabled=True)
         
-        if results:
-            with st.expander("🔍 Ver Análisis Técnico (JSON)"):
-                st.json([r.to_dict() for r in results])
+        if analizar:
+            st.info("ℹ️ Solo esta información anonimizada llega a los servidores de la IA.")
+            st.warning("Los datos originales han sido suprimidos o enmascarados.")
+
+    # --- ALERTAS ---
+    if analizar and entidades_detectadas:
+        st.error(f"⚠️ ¡ALERTA DLP! Se han detectado datos sensibles: {list(set(entidades_detectadas))}")
+        with st.expander("Ver detalles técnicos de la detección (JSON)"):
+            st.json([r.to_dict() for r in results])
+    elif analizar:
+        st.success("✅ Tráfico limpio. No se detectaron riesgos.")
+
+    # --- PIE DE PÁGINA SIMPLE ---
+    st.divider()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Estado del Sistema", "Activo", "En línea")
+    m2.metric("Motor DLP", "Microsoft Presidio", "v2.0")
+    m3.metric("Cumplimiento", "ISO 27001", "A.8.12")
